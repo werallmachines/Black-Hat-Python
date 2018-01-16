@@ -1,14 +1,13 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python2
+# Rewrite and rework of Black Hat Python Chapter 1
 
-import sys, struct, socket, argparse, threading, subprocess
+import os, sys, struct, socket, argparse, threading, subprocess
 
-file_buffer = ""
 listen = ""
-cmd = ""
-upload = True
+command = ""
+upload = ""
 execute = ""
 target = ""
-upload_destination = "/home/ubuntu/test.txt"
 
 frame_struct = struct.Struct("!I")
 
@@ -57,7 +56,51 @@ def recvall(sock, length):
         data.append(chunk)
     return ''.join(data)
 
+def write_buffer(client_socket, file_buffer):
+    '''
+    if -u is chosen, this function writes
+    to the given destination
+    '''
+    try:
+        file_descriptor = open(upload, "wb")
+        file_descriptor.write(file_buffer)
+        file_descriptor.close()
+        msg = "Successfully saved file to {}\r\n".format(upload)
+        put_chunk(client_socket, msg)
+        return
+    except:
+        msg = "Failed to save file to {}\r\n".format(upload)
+        put_chunk(client_socket, msg)
+        return
+
+def run_command(command):
+    '''
+    command shell code
+    '''
+    command = command.rstrip()
+
+    if command.startswith("cd", 0, 2):
+        try:
+            target_dir = command[3:]
+            os.chdir(target_dir)
+            output = subprocess.check_output("pwd", stderr=subprocess.
+                     STDOUT, shell=True)
+            output = "Now in: " + output
+        except OSError:
+            output = "No such file or directory:", target_dir + "\r\n"
+        return output
+    else:
+        try:
+            output = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=True)
+        except:
+            output = "Failed to execute command.\r\n"
+        return output
+
 def client_sender():
+    '''
+    handles the logic of client sending 
+    data to server
+    '''
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     try:
@@ -67,8 +110,9 @@ def client_sender():
         try:
             while True:
                 recv_buffer = ""
-                msg = raw_input(">")
+                msg = raw_input("PyCat:#> ")
                 if msg == "exit":
+                    print "[*] Exiting gracefully."
                     client.close()
                     sys.exit(0)
                 put_chunk(client, msg)
@@ -83,14 +127,16 @@ def client_sender():
         except EOFError:
             print "Socket has closed."
         finally:
-            print "Closing in inner client try/except"
             client.close()
-    except socket.gaierror:
-        print "Name or service not known."
-    except socket.error as e:
-        print e
+    except:
+        print "[*] Exception! Exiting."
+        client.close()
 
 def server_loop():
+    '''
+    server accepts incoming client and spins off
+    new thread, then goes back to listening
+    '''
     global target
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -99,23 +145,18 @@ def server_loop():
     server.listen(2)
 
     while True:
-        print "waiting for client to connect..."
         client_socket, addr = server.accept()
         client_thread = threading.Thread(target=client_handler, args=(client_socket,))
         client_thread.start()
-        print "spun off new client thread..."
-
-def run_cmd(cmd):
-    pass
 
 def client_handler(client_socket):
     global upload
     global execute
-    global cmd
+    global command
 
     """
-    If -u is chosen on target, will receive bytes
-    and try to write them out to file.
+    handles the logic of upload, execute,
+    and command.
     """
     if upload:
         file_buffer = ""
@@ -132,30 +173,30 @@ def client_handler(client_socket):
         finally:
             client_socket.close()
 
-def write_buffer(client_socket, file_buffer):
-    try:
-        file_descriptor = open(upload_destination, "wb")
-        file_descriptor.write(file_buffer)
-        file_descriptor.close()
-        print "Sending msg to client now..."
-        msg = "Successfully saved file to {}\r\n".format(upload_destination)
-        put_chunk(client_socket, msg)
-        return
-    except:
-        print "sending msg to client now..."
-        msg = "Failed to save file to {}\r\n".format(upload_destination)
-        put_chunk(client_socket, msg)
-        return
+    if execute:
+        output = run_command(execute)
+        put_chunk(client_socket, output)
 
-def main():
-    parse_cmd_line()
+    if command:
+        cmd_buffer = ""
 
-    if not listen:
-        buffer = raw_input(">")
+        try:
+            while True:
+                data = get_chunk(client_socket)
+                if not data:
+                    response = run_command(cmd_buffer)
+                    put_chunk(client_socket, response)
+                    cmd_buffer = ""
+                else:
+                    cmd_buffer += data
+        except EOFError:
+            print "Client socket has closed"
+        finally:
+            client_socket.close()
 
 def parse_cmd_line():
     global listen
-    global cmd
+    global command
     global execute
     global target
     global upload
@@ -163,19 +204,27 @@ def parse_cmd_line():
     parser = argparse.ArgumentParser(description="NC replacement tool")
     parser.add_argument("-l", action="store_true",
                         help="Set PyCat to listen on given [IP]:[port]")
-    parser.add_argument("-c", metavar="cmd", help="Initialize command shell")
-    parser.add_argument("-e", metavar="execute", help="Execute file upon connection")
+    parser.add_argument("-c", action="store_true", help="Initialize command shell")
+    parser.add_argument("-e", metavar="execute", help="Execute cmd upon connection")
     parser.add_argument("IP", help="Connect to/bind to (0.0.0.0 for all interfaces)")
     parser.add_argument("p", type=int, help="TCP port to use")
-    #parser.add_argument("-u", metavar="upload",
-                        #help="Upon connection upload and write file to [destination]")
+    parser.add_argument("-u", metavar="upload",
+                        help="Upon connection upload and write file to here")
     args = parser.parse_args()
 
     listen = args.l
-    cmd = args.c
+    command = args.c
     execute = args.e
     target = (args.IP, args.p)
-    #upload = args.u
+    upload = args.u
+
+def main():
+    print ascii_art["greet"]
+    parse_cmd_line()
+    if listen:
+        server_loop()
+    else:
+        client_sender()
 
 ascii_art = {"greet": r'''
              *     ,MMM8&&&.            *
@@ -202,11 +251,4 @@ ascii_art = {"greet": r'''
   '''}
 
 if __name__ == "__main__":
-    print ascii_art["greet"]
-    parse_cmd_line()
-    if listen:
-        server_loop()
-    else:
-        client_sender()
-
-
+    main()
