@@ -8,3 +8,4 @@ Main differences:
   created network protocol to get rid of the blocking issues of original script
   added change dirctory functionality to cmd shell
   added cat ascii art
+  more to come
