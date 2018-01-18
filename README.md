@@ -4,6 +4,7 @@
 Many of the scripts in the book don't work or are outdated. These are my reworks of all the scripts from the book, working and updated. Still built for Python 2.x.
 
 Main differences:
+<br>
 <b>pycat.py</b>
 <ul>
   <li>used argparse instead of getopt for cmd line parsing</li>
