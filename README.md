@@ -17,5 +17,5 @@ Main differences:
  <b>tcp-proxy.py</b>
  <ul>
     <li>instead of having to manually choose if the application needs to receive data first,
-      it will automatically listen then time out if nothing arrives before entering loop</li>
+      it will automatically listen first</li>
   </ul>
